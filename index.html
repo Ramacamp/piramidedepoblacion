@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -47,7 +48,7 @@
         <div class="max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-white tracking-tight">Constructor de Pirámide de Población</h1>
-                <p class="text-slate-400 text-sm mt-1">Herramienta profesional de análisis demográfico interactivo</p>
+                <p class="text-slate-400 text-sm mt-1">Análisis demográfico profesional con ordenación automática</p>
             </div>
             <div class="flex items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700">
                 <div class="p-2 bg-teal-500/10 rounded-lg">
@@ -179,7 +180,7 @@
                         <div class="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto">
                             <i data-lucide="bar-chart-3" class="w-10 h-10 text-slate-600"></i>
                         </div>
-                        <p class="text-slate-400 max-w-xs mx-auto">Ingresa datos demográficos para generar la pirámide de población.</p>
+                        <p class="text-slate-400 max-w-xs mx-auto">Ingresa datos demográficos. La pirámide se ordenará automáticamente de menor a mayor edad.</p>
                     </div>
                     <canvas id="pyramid-canvas" class="hidden w-full h-full"></canvas>
                 </div>
@@ -188,11 +189,8 @@
     </main>
 
     <footer class="p-8 text-center text-slate-500 text-xs border-t border-slate-800">
-        &copy; 2024 Visualizador Demográfico Interactivo | Diseño Profesional
+        &copy; 2024 Visualizador Demográfico Interactivo | Ordenación Inteligente
     </footer>
-
-    <!-- Elemento oculto para PDF (Estructura de la tabla para el PDF) -->
-    <div id="pdf-table-template" class="hidden"></div>
 
     <script>
         const { jsPDF } = window.jspdf;
@@ -201,7 +199,6 @@
         let selectedYear = '';
         const AGES = ['0-4','5-9','10-14','15-19','20-24','25-29','30-34','35-39','40-44','45-49','50-54','55-59','60-64','65-69','70-74','75-79','80+'];
 
-        // Cargar datos locales al iniciar
         function loadLocal() {
             const stored = localStorage.getItem('demographics_data');
             if (stored) allData = JSON.parse(stored);
@@ -215,7 +212,6 @@
             localStorage.setItem('demographics_location', document.getElementById('location-name').value);
         }
 
-        // Inicializar botones de edad rápida
         const qc = document.getElementById('quick-ages');
         AGES.forEach(a => {
             const b = document.createElement('button');
@@ -227,8 +223,11 @@
         });
 
         function ageSort(a, b) {
-            const parse = s => parseInt(s.split('-')[0]) || 999;
-            return parse(a) - parse(b);
+            const getNum = s => {
+                const match = String(s).match(/\d+/);
+                return match ? parseInt(match[0], 10) : 999;
+            };
+            return getNum(a) - getNum(b);
         }
 
         function updateApp() {
@@ -280,7 +279,7 @@
                     <td class="py-3 px-4 text-right text-rose-400 font-medium">${r.female.toLocaleString()}</td>
                     <td class="py-3 px-4 text-right text-slate-400 text-xs">${total.toLocaleString()}</td>
                     <td class="py-3 px-4 text-right">
-                        <button onclick="deleteRecord(${idx})" class="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-all">
+                        <button onclick="deleteRecord('${r.year}', '${r.age_group}')" class="p-1.5 hover:bg-red-500/10 rounded-lg text-slate-500 hover:text-red-400 transition-all">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                     </td>
@@ -290,16 +289,18 @@
             lucide.createIcons();
         }
 
-        window.deleteRecord = (index) => {
-            const yearData = allData.filter(d => d.year === selectedYear);
-            const target = yearData[index];
-            allData = allData.filter(d => d !== target);
+        window.deleteRecord = (year, ageGroup) => {
+            allData = allData.filter(d => !(d.year === year && d.age_group === ageGroup));
             saveLocal();
             updateApp();
         };
 
         function drawPyramid() {
-            const filtered = allData.filter(d => d.year === selectedYear).sort((a, b) => ageSort(a.age_group, b.age_group));
+            const filtered = allData
+                .filter(d => d.year === selectedYear)
+                .sort((a, b) => ageSort(a.age_group, b.age_group))
+                .reverse(); 
+            
             const canvas = document.getElementById('pyramid-canvas');
             const msg = document.getElementById('no-data-msg');
             
@@ -317,7 +318,7 @@
             const rect = canvas.parentElement.getBoundingClientRect();
             
             const width = rect.width;
-            const height = Math.max(450, filtered.length * 30 + 100);
+            const height = Math.max(500, filtered.length * 30 + 150);
             
             canvas.width = width * dpr;
             canvas.height = height * dpr;
@@ -327,109 +328,194 @@
 
             const maxPop = Math.max(1, ...filtered.map(d => Math.max(d.male, d.female)));
             const padding = 60;
-            const labelWidth = 60;
+            const labelWidth = 70;
             const barAreaWidth = (width - padding * 2 - labelWidth) / 2;
             const centerX = width / 2;
             const rowHeight = 28;
-            const startY = 60;
+            const startY = 50;
+            const bottomY = startY + filtered.length * rowHeight;
 
             ctx.clearRect(0, 0, width, height);
 
-            // Guías de fondo
-            ctx.strokeStyle = '#334155';
-            ctx.setLineDash([5, 5]);
-            ctx.beginPath();
-            ctx.moveTo(centerX - labelWidth/2 - 10, startY);
-            ctx.lineTo(centerX - labelWidth/2 - 10, startY + filtered.length * rowHeight);
-            ctx.moveTo(centerX + labelWidth/2 + 10, startY);
-            ctx.lineTo(centerX + labelWidth/2 + 10, startY + filtered.length * rowHeight);
-            ctx.stroke();
-            ctx.setLineDash([]);
+            const numTicks = 5;
+            const tickStep = Math.ceil(maxPop / numTicks / 10) * 10 || 1;
+
+            ctx.textAlign = 'center';
+            ctx.font = '500 10px DM Sans';
+            
+            for (let i = 0; i <= numTicks; i++) {
+                const val = i * tickStep;
+                const offset = (val / maxPop) * barAreaWidth;
+
+                ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
+                ctx.lineWidth = 1;
+
+                const xLeft = centerX - labelWidth/2 - 10 - offset;
+                ctx.beginPath();
+                ctx.moveTo(xLeft, startY);
+                ctx.lineTo(xLeft, bottomY + 5);
+                ctx.stroke();
+                
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(val.toLocaleString(), xLeft, bottomY + 20);
+
+                const xRight = centerX + labelWidth/2 + 10 + offset;
+                ctx.beginPath();
+                ctx.moveTo(xRight, startY);
+                ctx.lineTo(xRight, bottomY + 5);
+                ctx.stroke();
+                
+                ctx.fillText(val.toLocaleString(), xRight, bottomY + 20);
+            }
+
+            ctx.fillStyle = '#475569';
+            ctx.font = 'bold 9px DM Sans';
+            ctx.fillText('CANTIDAD DE PERSONAS (VALORES ABSOLUTOS)', width/2, bottomY + 45);
 
             filtered.forEach((d, i) => {
                 const y = startY + i * rowHeight;
                 const mWidth = (d.male / maxPop) * barAreaWidth;
                 const fWidth = (d.female / maxPop) * barAreaWidth;
 
-                // Barras Hombres (Izquierda)
                 ctx.fillStyle = '#0ea5e9';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'rgba(14, 165, 233, 0.2)';
                 ctx.beginPath();
                 ctx.roundRect(centerX - labelWidth/2 - 10 - mWidth, y + 4, mWidth, rowHeight - 8, 4);
                 ctx.fill();
+                ctx.shadowBlur = 0;
 
-                // Barras Mujeres (Derecha)
                 ctx.fillStyle = '#fb7185';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = 'rgba(251, 113, 133, 0.2)';
                 ctx.beginPath();
                 ctx.roundRect(centerX + labelWidth/2 + 10, y + 4, fWidth, rowHeight - 8, 4);
                 ctx.fill();
+                ctx.shadowBlur = 0;
 
-                // Etiquetas de Edad
-                ctx.fillStyle = '#94a3b8';
+                ctx.fillStyle = '#f1f5f9';
                 ctx.font = 'bold 11px DM Sans';
                 ctx.textAlign = 'center';
                 ctx.fillText(d.age_group, centerX, y + rowHeight/2 + 4);
             });
         }
 
-        // Exportar a PDF
+        // Función para renderizar la pirámide manteniendo colores originales para el PDF
+        function getColoredPyramidDataURL(filtered, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            const maxPop = Math.max(1, ...filtered.map(d => Math.max(d.male, d.female)));
+            const labelWidth = 100;
+            const paddingSide = 40;
+            const barAreaWidth = (width - paddingSide * 2 - labelWidth) / 2;
+            const centerX = width / 2;
+            const rowHeight = (height - 150) / filtered.length;
+            const startY = 40;
+            const bottomY = startY + filtered.length * rowHeight;
+
+            // Fondo blanco para el PDF
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+
+            const numTicks = 5;
+            const tickStep = Math.ceil(maxPop / numTicks / 10) * 10 || 1;
+            
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 18px Arial';
+            ctx.strokeStyle = '#e2e8f0'; // Líneas suaves de guía
+            ctx.lineWidth = 1.5;
+            ctx.fillStyle = '#64748b';
+
+            for (let i = 0; i <= numTicks; i++) {
+                const val = i * tickStep;
+                const offset = (val / maxPop) * barAreaWidth;
+                const xL = centerX - labelWidth/2 - 10 - offset;
+                const xR = centerX + labelWidth/2 + 10 + offset;
+
+                ctx.beginPath();
+                ctx.moveTo(xL, startY); ctx.lineTo(xL, bottomY + 5); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(xR, startY); ctx.lineTo(xR, bottomY + 5); ctx.stroke();
+
+                ctx.fillText(val.toLocaleString(), xL, bottomY + 30);
+                ctx.fillText(val.toLocaleString(), xR, bottomY + 30);
+            }
+
+            filtered.forEach((d, i) => {
+                const y = startY + i * rowHeight;
+                const mWidth = (d.male / maxPop) * barAreaWidth;
+                const fWidth = (d.female / maxPop) * barAreaWidth;
+
+                // Color Hombres (#0ea5e9)
+                ctx.fillStyle = '#0ea5e9';
+                ctx.fillRect(centerX - labelWidth/2 - 10 - mWidth, y + 4, mWidth, rowHeight - 8);
+
+                // Color Mujeres (#fb7185)
+                ctx.fillStyle = '#fb7185';
+                ctx.fillRect(centerX + labelWidth/2 + 10, y + 4, fWidth, rowHeight - 8);
+
+                // Texto Edad en negro para legibilidad
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText(d.age_group, centerX, y + rowHeight/2 + 7);
+            });
+
+            return canvas.toDataURL('image/png');
+        }
+
         document.getElementById('export-pdf').addEventListener('click', async () => {
             const loc = document.getElementById('location-name').value || 'SIN NOMBRE';
             const year = selectedYear;
-            const filtered = allData.filter(d => d.year === year).sort((a, b) => ageSort(a.age_group, b.age_group));
+            const tableDataFiltered = allData.filter(d => d.year === year).sort((a, b) => ageSort(a.age_group, b.age_group));
+            const pyramidDataFiltered = [...tableDataFiltered].reverse();
             
-            if (filtered.length === 0) return alert("No hay datos para exportar.");
+            if (tableDataFiltered.length === 0) return;
 
             const pdf = new jsPDF('l', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             
-            // Título
+            pdf.setTextColor(0, 0, 0);
             pdf.setFont("helvetica", "bold");
-            pdf.setFontSize(16);
-            const title = `PIRÁMIDE DE POBLACIÓN DE ${loc.toUpperCase()} DE ${year}`;
-            pdf.text(title, 15, 20);
+            pdf.setFontSize(18);
+            pdf.text(`PIRÁMIDE DE POBLACIÓN: ${loc.toUpperCase()} (${year})`, 15, 20);
 
-            // Dibujar Tabla en el PDF
-            pdf.setFontSize(10);
-            pdf.setTextColor(40, 40, 40);
-            let currentY = 35;
-            
-            // Cabecera tabla
-            pdf.setFillColor(240, 240, 240);
-            pdf.rect(15, currentY - 5, 80, 7, 'F');
-            pdf.text("GRUPO EDAD", 17, currentY);
-            pdf.text("HOMBRES", 45, currentY, { align: 'right' });
-            pdf.text("MUJERES", 65, currentY, { align: 'right' });
-            pdf.text("TOTAL", 90, currentY, { align: 'right' });
-            currentY += 8;
+            // 1. Tabla de Datos a la Izquierda
+            const body = tableDataFiltered.map(d => [
+                d.age_group, 
+                d.male.toLocaleString(), 
+                d.female.toLocaleString(), 
+                (d.male + d.female).toLocaleString()
+            ]);
 
-            pdf.setFont("helvetica", "normal");
-            filtered.forEach(d => {
-                pdf.text(d.age_group, 17, currentY);
-                pdf.text(d.male.toLocaleString(), 45, currentY, { align: 'right' });
-                pdf.text(d.female.toLocaleString(), 65, currentY, { align: 'right' });
-                pdf.text((d.male + d.female).toLocaleString(), 90, currentY, { align: 'right' });
-                
-                pdf.setDrawColor(230, 230, 230);
-                pdf.line(15, currentY + 2, 95, currentY + 2);
-                currentY += 7;
+            pdf.autoTable({
+                head: [['Edad', 'Hombres', 'Mujeres', 'Total']],
+                body: body,
+                startY: 30,
+                margin: { left: 15 },
+                tableWidth: 85,
+                styles: { fontSize: 8, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.1 },
+                headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold' },
             });
 
-            // Capturar el Canvas de la pirámide
-            const chartCanvas = document.getElementById('pyramid-canvas');
-            const imgData = chartCanvas.toDataURL('image/png');
+            // 2. Pirámide a la Derecha manteniendo los colores originales
+            const imgData = getColoredPyramidDataURL(pyramidDataFiltered, 1800, 1200);
+            const chartX = 105;
+            const chartY = 30;
+            const chartW = pageWidth - chartX - 15;
+            const chartH = 150;
             
-            // Añadir imagen al PDF (a la derecha de la tabla)
-            // Ajustamos escala: el canvas puede ser muy alto
-            const aspect = chartCanvas.width / chartCanvas.height;
-            const imgW = 170;
-            const imgH = imgW / aspect;
-            
-            pdf.addImage(imgData, 'PNG', 110, 30, imgW, Math.min(imgH, 160));
+            pdf.addImage(imgData, 'PNG', chartX, chartY, chartW, chartH);
+
+            pdf.setFontSize(9);
+            pdf.setFont("helvetica", "normal");
+            pdf.text(`Documento generado el ${new Date().toLocaleDateString()}. Los colores representan géneros (Azul: Hombres, Rosa: Mujeres).`, 15, pdf.internal.pageSize.getHeight() - 10);
 
             pdf.save(`Piramide_${loc}_${year}.pdf`);
         });
 
-        // Eventos
         document.getElementById('entry-form').addEventListener('submit', e => {
             e.preventDefault();
             const year = document.getElementById('year-input').value.trim();
@@ -439,23 +525,21 @@
 
             if (!year || !age || isNaN(male) || isNaN(female)) {
                 const err = document.getElementById('form-error');
-                document.getElementById('error-text').textContent = "Por favor, completa todos los campos.";
+                document.getElementById('error-text').textContent = "Completa todos los campos para continuar.";
                 err.classList.remove('hidden');
                 setTimeout(() => err.classList.add('hidden'), 3000);
                 return;
             }
 
-            // Eliminar si ya existe esa edad en ese año para actualizar
             allData = allData.filter(d => !(d.year === year && d.age_group === age));
-            
             allData.push({ year, age_group: age, male, female });
             saveLocal();
             updateApp();
             
-            // Limpiar inputs parciales
             document.getElementById('age-input').value = '';
             document.getElementById('male-input').value = '';
             document.getElementById('female-input').value = '';
+            document.getElementById('age-input').focus();
         });
 
         document.getElementById('year-select').addEventListener('change', (e) => {
@@ -471,8 +555,6 @@
         });
 
         window.addEventListener('resize', drawPyramid);
-
-        // Init
         loadLocal();
         lucide.createIcons();
     </script>
